@@ -1,4 +1,5 @@
 use crate::block::Block;
+use crate::transaction::Transaction;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Blockchain struct that manages the chain of blocks
@@ -8,8 +9,8 @@ pub struct Blockchain {
     pub chain: Vec<Block>,
     /// Mining difficulty (number of leading zeros required) - for Day 4
     pub difficulty: u32,
-    /// Pending transaction pool - for Day 3
-    pub pending_transactions: Vec<String>,
+    /// Pending transaction pool (mempool)
+    pub pending_transactions: Vec<Transaction>,
 }
 
 impl Blockchain {
@@ -30,12 +31,7 @@ impl Blockchain {
 
     /// Creates the genesis block (first block in the chain)
     fn create_genesis_block() -> Block {
-        Block::new(
-            0,
-            0,
-            String::from("Genesis Block - The Beginning of RustChain"),
-            String::from("0"),
-        )
+        Block::genesis()
     }
 
     /// Returns a reference to the latest block in the chain
@@ -43,22 +39,52 @@ impl Blockchain {
         self.chain.last().expect("Chain should always have at least genesis block")
     }
 
-    /// Adds a new block with the given data to the blockchain
-    pub fn add_block(&mut self, data: String) {
-        // Get the previous block's hash
-        let previous_hash = self.get_latest_block().hash.clone();
+    /// Adds a transaction to the pending pool (mempool)
+    pub fn add_transaction(&mut self, sender: String, receiver: String, amount: f64) -> Result<(), String> {
+        // Validate and create the transaction
+        let transaction = Transaction::new(sender, receiver, amount)?;
 
-        // Calculate the new block's index
-        let new_index = self.chain.len() as u64;
+        // Add to pending pool
+        self.pending_transactions.push(transaction);
 
+        Ok(())
+    }
+
+    /// Returns a reference to the pending transactions
+    pub fn get_pending_transactions(&self) -> &Vec<Transaction> {
+        &self.pending_transactions
+    }
+
+    /// Returns the number of pending transactions
+    pub fn pending_transaction_count(&self) -> usize {
+        self.pending_transactions.len()
+    }
+
+    /// Clears the pending transaction pool
+    pub fn clear_pending_transactions(&mut self) {
+        self.pending_transactions.clear();
+    }
+
+    /// Mines a new block with pending transactions
+    /// Note: Full proof-of-work mining will be implemented in Day 4
+    pub fn mine_block(&mut self) {
         // Get current timestamp
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_millis();
 
+        // Get the previous block's hash
+        let previous_hash = self.get_latest_block().hash.clone();
+
+        // Calculate the new block's index
+        let new_index = self.chain.len() as u64;
+
+        // Take pending transactions and clear the pool
+        let transactions = std::mem::take(&mut self.pending_transactions);
+
         // Create the new block
-        let new_block = Block::new(new_index, timestamp, data, previous_hash);
+        let new_block = Block::new(new_index, timestamp, transactions, previous_hash);
 
         // Add the block to the chain
         self.chain.push(new_block);
@@ -100,31 +126,35 @@ impl Blockchain {
         println!("\n=== Blockchain ===");
         println!("Total blocks: {}", self.len());
         println!("Difficulty: {}", self.difficulty);
+        println!("Pending transactions: {}", self.pending_transaction_count());
         println!("Chain valid: {}\n", self.is_valid());
 
         for block in &self.chain {
-            Self::display_block(block);
+            block.display();
             println!();
         }
     }
 
-    /// Displays a single block
-    fn display_block(block: &Block) {
-        println!("Block #{}", block.index);
-        println!("  Timestamp:     {}", block.timestamp);
-        println!("  Data:          {}", block.data);
-        println!("  Previous Hash: {}", block.previous_hash);
-        println!("  Nonce:         {}", block.nonce);
-        println!("  Hash:          {}", block.hash);
+    /// Displays pending transactions
+    pub fn display_pending_transactions(&self) {
+        println!("\n=== Pending Transactions ({}) ===", self.pending_transaction_count());
+        if self.pending_transaction_count() == 0 {
+            println!("No pending transactions");
+        } else {
+            for (i, tx) in self.pending_transactions.iter().enumerate() {
+                println!("  {}. {}", i + 1, tx);
+            }
+        }
     }
 
     /// Returns a summary of the blockchain
     pub fn summary(&self) {
         println!("\n=== Blockchain Summary ===");
-        println!("Total blocks:   {}", self.len());
-        println!("Latest block:   #{}", self.get_latest_block().index);
-        println!("Latest hash:    {}", self.get_latest_block().hash);
-        println!("Chain valid:    {}", self.is_valid());
+        println!("Total blocks:           {}", self.len());
+        println!("Latest block:           #{}", self.get_latest_block().index);
+        println!("Latest hash:            {}", self.get_latest_block().hash);
+        println!("Pending transactions:   {}", self.pending_transaction_count());
+        println!("Chain valid:            {}", self.is_valid());
     }
 }
 
@@ -144,39 +174,86 @@ mod tests {
         assert_eq!(blockchain.len(), 1);
         assert_eq!(blockchain.chain[0].index, 0);
         assert_eq!(blockchain.chain[0].previous_hash, "0");
+        assert_eq!(blockchain.pending_transaction_count(), 0);
     }
 
     #[test]
-    fn test_add_block() {
+    fn test_add_transaction() {
         let mut blockchain = Blockchain::new();
-        blockchain.add_block(String::from("First transaction"));
+        let result = blockchain.add_transaction(
+            String::from("Alice"),
+            String::from("Bob"),
+            10.0,
+        );
+        assert!(result.is_ok());
+        assert_eq!(blockchain.pending_transaction_count(), 1);
+    }
+
+    #[test]
+    fn test_add_invalid_transaction() {
+        let mut blockchain = Blockchain::new();
+        // Zero amount should fail
+        let result = blockchain.add_transaction(
+            String::from("Alice"),
+            String::from("Bob"),
+            0.0,
+        );
+        assert!(result.is_err());
+        assert_eq!(blockchain.pending_transaction_count(), 0);
+    }
+
+    #[test]
+    fn test_mine_block_with_transactions() {
+        let mut blockchain = Blockchain::new();
+
+        // Add some transactions
+        blockchain.add_transaction(String::from("Alice"), String::from("Bob"), 10.0).unwrap();
+        blockchain.add_transaction(String::from("Bob"), String::from("Charlie"), 5.0).unwrap();
+
+        assert_eq!(blockchain.pending_transaction_count(), 2);
+
+        // Mine a block
+        blockchain.mine_block();
+
+        // Verify block was added
         assert_eq!(blockchain.len(), 2);
-        assert_eq!(blockchain.chain[1].data, "First transaction");
+        assert_eq!(blockchain.chain[1].transaction_count(), 2);
+        assert_eq!(blockchain.pending_transaction_count(), 0); // Pool should be cleared
     }
 
     #[test]
-    fn test_block_linking() {
+    fn test_mine_empty_block() {
         let mut blockchain = Blockchain::new();
-        blockchain.add_block(String::from("Block 1"));
-        blockchain.add_block(String::from("Block 2"));
+        assert_eq!(blockchain.len(), 1);
 
-        // Verify second block points to first
-        assert_eq!(
-            blockchain.chain[1].previous_hash,
-            blockchain.chain[0].hash
-        );
-        // Verify third block points to second
-        assert_eq!(
-            blockchain.chain[2].previous_hash,
-            blockchain.chain[1].hash
-        );
+        // Mine with no pending transactions
+        blockchain.mine_block();
+
+        assert_eq!(blockchain.len(), 2);
+        assert_eq!(blockchain.chain[1].transaction_count(), 0);
     }
 
     #[test]
-    fn test_chain_validation() {
+    fn test_clear_pending_transactions() {
         let mut blockchain = Blockchain::new();
-        blockchain.add_block(String::from("Transaction 1"));
-        blockchain.add_block(String::from("Transaction 2"));
+        blockchain.add_transaction(String::from("Alice"), String::from("Bob"), 10.0).unwrap();
+        blockchain.add_transaction(String::from("Bob"), String::from("Charlie"), 5.0).unwrap();
+
+        assert_eq!(blockchain.pending_transaction_count(), 2);
+
+        blockchain.clear_pending_transactions();
+
+        assert_eq!(blockchain.pending_transaction_count(), 0);
+    }
+
+    #[test]
+    fn test_chain_validation_with_transactions() {
+        let mut blockchain = Blockchain::new();
+        blockchain.add_transaction(String::from("Alice"), String::from("Bob"), 10.0).unwrap();
+        blockchain.mine_block();
+        blockchain.add_transaction(String::from("Bob"), String::from("Charlie"), 5.0).unwrap();
+        blockchain.mine_block();
+
         assert!(blockchain.is_valid());
     }
 
@@ -184,6 +261,36 @@ mod tests {
     fn test_genesis_block_is_first() {
         let blockchain = Blockchain::new();
         assert_eq!(blockchain.chain[0].index, 0);
-        assert_eq!(blockchain.chain[0].data, "Genesis Block - The Beginning of RustChain");
+        assert_eq!(blockchain.chain[0].previous_hash, "0");
+        assert_eq!(blockchain.chain[0].transaction_count(), 0);
+    }
+
+    #[test]
+    fn test_transaction_order_preserved_in_block() {
+        let mut blockchain = Blockchain::new();
+
+        // Add transactions in a specific order
+        blockchain.add_transaction(String::from("A"), String::from("B"), 1.0).unwrap();
+        blockchain.add_transaction(String::from("B"), String::from("C"), 2.0).unwrap();
+        blockchain.add_transaction(String::from("C"), String::from("D"), 3.0).unwrap();
+
+        blockchain.mine_block();
+
+        let block = &blockchain.chain[1];
+        assert_eq!(block.transaction_count(), 3);
+        assert_eq!(block.transactions[0].sender, "A");
+        assert_eq!(block.transactions[1].sender, "B");
+        assert_eq!(block.transactions[2].sender, "C");
+    }
+
+    #[test]
+    fn test_get_pending_transactions() {
+        let mut blockchain = Blockchain::new();
+        blockchain.add_transaction(String::from("Alice"), String::from("Bob"), 10.0).unwrap();
+
+        let pending = blockchain.get_pending_transactions();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].sender, "Alice");
+        assert_eq!(pending[0].receiver, "Bob");
     }
 }
