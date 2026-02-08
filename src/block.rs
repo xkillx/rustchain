@@ -1,7 +1,8 @@
 use crate::crypto::calculate_hash;
 use crate::transaction::Transaction;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub index: u64,
     pub timestamp: u128,

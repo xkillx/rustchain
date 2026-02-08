@@ -1,8 +1,9 @@
 use std::fmt;
+use serde::{Deserialize, Serialize};
 
 /// Represents a transaction in the blockchain
 /// Transfers amount from sender to receiver
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Transaction {
     pub sender: String,
     pub receiver: String,

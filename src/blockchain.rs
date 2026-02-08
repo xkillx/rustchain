@@ -1,16 +1,17 @@
 use crate::block::Block;
 use crate::transaction::Transaction;
+use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Difference between two blockchains
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainDiff {
     pub blocks_different: usize,
     pub first_divergence: Option<usize>,
 }
 
 /// Blockchain struct that manages the chain of blocks
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Blockchain {
     /// Vector storing all blocks in order
     pub chain: Vec<Block>,
