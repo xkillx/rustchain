@@ -2,6 +2,9 @@
 //! Provides command-line interface for interacting with the blockchain
 
 use crate::blockchain::Blockchain;
+use crate::attacks::{AttackSimulator, AttackType};
+use crate::experiments::SecurityExperiments;
+use crate::visualization::BlockchainVisualizer;
 use std::io::{self, Write};
 use std::process;
 use std::time::Instant;
@@ -61,6 +64,28 @@ pub enum Command {
     /// Load blockchain from file
     Load { path: String },
 
+    // Day 7: Attack Simulation Commands
+    /// List available attacks
+    AttackList,
+
+    /// Run a specific attack
+    AttackRun { attack_name: String },
+
+    /// Run all attacks
+    AttackAll,
+
+    /// Show attack results summary
+    AttackReport,
+
+    /// Run security experiment
+    Experiment { experiment_type: String },
+
+    /// Display blockchain visualization
+    Visualize,
+
+    /// Display educational content
+    Learn { topic: Option<String> },
+
     /// Display help information
     Help,
 
@@ -76,6 +101,10 @@ pub struct Cli {
     blockchain: Blockchain,
     command_history: Vec<String>,
     auto_save_path: Option<String>,
+    // Day 7: Attack simulation and experiments
+    attack_simulator: AttackSimulator,
+    experiments: SecurityExperiments,
+    visualizer: BlockchainVisualizer,
 }
 
 impl Cli {
@@ -85,6 +114,9 @@ impl Cli {
             blockchain: Blockchain::new(),
             command_history: Vec::new(),
             auto_save_path: None,
+            attack_simulator: AttackSimulator::new(),
+            experiments: SecurityExperiments::new(),
+            visualizer: BlockchainVisualizer::new(),
         }
     }
 
@@ -94,6 +126,9 @@ impl Cli {
             blockchain,
             command_history: Vec::new(),
             auto_save_path: None,
+            attack_simulator: AttackSimulator::new(),
+            experiments: SecurityExperiments::new(),
+            visualizer: BlockchainVisualizer::new(),
         }
     }
 
@@ -228,6 +263,39 @@ impl Cli {
                 Ok(Command::Load { path: args[1].clone() })
             }
 
+            // Day 7: Attack simulation commands
+            "attack" | "atk" => {
+                if args.len() < 2 {
+                    return Ok(Command::AttackList);
+                }
+                match args[1].as_str() {
+                    "list" | "ls" => Ok(Command::AttackList),
+                    "run" => {
+                        if args.len() < 3 {
+                            return Err(CliError::MissingArgument("Usage: attack run <attack_name>".to_string()));
+                        }
+                        Ok(Command::AttackRun { attack_name: args[2].clone() })
+                    }
+                    "all" => Ok(Command::AttackAll),
+                    "report" => Ok(Command::AttackReport),
+                    _ => Err(CliError::InvalidArgument(format!("Unknown attack command: {}", args[1]))),
+                }
+            }
+
+            "experiment" | "exp" => {
+                if args.len() < 2 {
+                    return Err(CliError::MissingArgument("Usage: experiment <type>".to_string()));
+                }
+                Ok(Command::Experiment { experiment_type: args[1].clone() })
+            }
+
+            "visualize" | "viz" => Ok(Command::Visualize),
+
+            "learn" => {
+                let topic = if args.len() > 1 { Some(args[1].clone()) } else { None };
+                Ok(Command::Learn { topic })
+            }
+
             "help" | "h" | "?" => Ok(Command::Help),
 
             "exit" | "quit" | "q" => Ok(Command::Exit),
@@ -277,6 +345,35 @@ impl Cli {
 
             Command::Load { path } => {
                 self.execute_load(path)
+            }
+
+            // Day 7: Attack simulation commands
+            Command::AttackList => {
+                self.execute_attack_list()
+            }
+
+            Command::AttackRun { attack_name } => {
+                self.execute_attack_run(attack_name)
+            }
+
+            Command::AttackAll => {
+                self.execute_attack_all()
+            }
+
+            Command::AttackReport => {
+                self.execute_attack_report()
+            }
+
+            Command::Experiment { experiment_type } => {
+                self.execute_experiment(experiment_type)
+            }
+
+            Command::Visualize => {
+                self.execute_visualize()
+            }
+
+            Command::Learn { topic } => {
+                self.execute_learn(topic)
             }
 
             Command::Help => {
@@ -539,6 +636,149 @@ impl Cli {
         balance
     }
 
+    // =========================================================================
+    // Day 7: Attack Simulation & Education Commands
+    // =========================================================================
+
+    /// Execute attack list command
+    fn execute_attack_list(&self) -> CommandResult {
+        let mut output = format!("\n=== Available Attack Simulations ===\n\n");
+
+        for (i, attack_type) in AttackType::all().iter().enumerate() {
+            output.push_str(&format!("  {}. {}\n", i + 1, attack_type));
+            output.push_str(&format!("     {}\n\n", attack_type.description()));
+        }
+
+        output.push_str("Usage:\n");
+        output.push_str("  attack run <name>     Run a specific attack\n");
+        output.push_str("  attack all            Run all attacks\n");
+        output.push_str("  attack report         Show attack results summary\n");
+
+        Ok(Some(output))
+    }
+
+    /// Execute attack run command
+    fn execute_attack_run(&mut self, attack_name: String) -> CommandResult {
+        // Find matching attack type
+        let attack_type = AttackType::all().into_iter()
+            .find(|t| t.to_string().to_lowercase().contains(&attack_name.to_lowercase()));
+
+        let attack_type = match attack_type {
+            Some(t) => t,
+            None => return Err(CliError::InvalidArgument(format!("Unknown attack: {}", attack_name))),
+        };
+
+        // Run the attack
+        let result = self.attack_simulator.run_attack(attack_type, &self.blockchain);
+
+        Ok(Some(result.to_string()))
+    }
+
+    /// Execute attack all command
+    fn execute_attack_all(&mut self) -> CommandResult {
+        println!("\n=== Running All Attack Simulations ===\n");
+
+        // Need at least 2 blocks for most attacks
+        if self.blockchain.len() < 2 {
+            // Create some blocks for testing
+            println!("Creating test blockchain...");
+            self.blockchain.add_transaction("Alice".to_string(), "Bob".to_string(), 10.0).unwrap();
+            self.blockchain.mine_block();
+            self.blockchain.add_transaction("Bob".to_string(), "Charlie".to_string(), 5.0).unwrap();
+            self.blockchain.mine_block();
+        }
+
+        let results = self.attack_simulator.run_all_attacks(&self.blockchain);
+
+        let summary = self.attack_simulator.generate_summary();
+        Ok(Some(summary))
+    }
+
+    /// Execute attack report command
+    fn execute_attack_report(&self) -> CommandResult {
+        if self.attack_simulator.results.is_empty() {
+            Ok(Some("No attack results available. Run 'attack all' first.".to_string()))
+        } else {
+            Ok(Some(self.attack_simulator.generate_summary()))
+        }
+    }
+
+    /// Execute experiment command
+    fn execute_experiment(&mut self, experiment_type: String) -> CommandResult {
+        match experiment_type.as_str() {
+            "difficulty" | "diff" => {
+                self.experiments.experiment_difficulty_vs_time(4, 3);
+                Ok(Some("Difficulty experiment complete!".to_string()))
+            }
+            "cost" => {
+                self.experiments.calculate_attack_cost(6, 4, 1_000_000_000, 0.10, 1000.0);
+                Ok(Some("Attack cost calculation complete!".to_string()))
+            }
+            "cascade" | "cascading" => {
+                self.experiments.demonstrate_cascading_failure(5);
+                Ok(Some("Cascading failure demonstration complete!".to_string()))
+            }
+            "finality" => {
+                self.experiments.demonstrate_finality(6);
+                Ok(Some("Finality demonstration complete!".to_string()))
+            }
+            "longest" => {
+                self.experiments.demonstrate_longest_chain_rule();
+                Ok(Some("Longest chain rule demonstration complete!".to_string()))
+            }
+            "all" => {
+                self.experiments.run_all_experiments();
+                Ok(Some("All experiments complete!".to_string()))
+            }
+            _ => Err(CliError::InvalidArgument(format!(
+                "Unknown experiment: {}. Available: difficulty, cost, cascade, finality, longest, all",
+                experiment_type
+            ))),
+        }
+    }
+
+    /// Execute visualize command
+    fn execute_visualize(&self) -> CommandResult {
+        self.visualizer.display_chain(&self.blockchain);
+        Ok(None)
+    }
+
+    /// Execute learn command
+    fn execute_learn(&self, topic: Option<String>) -> CommandResult {
+        match topic.as_deref() {
+            None | Some("") => {
+                self.visualizer.display_education_summary();
+                Ok(None)
+            }
+            Some("difficulty") => {
+                self.visualizer.display_difficulty_table();
+                Ok(None)
+            }
+            Some("double-spend") => {
+                self.visualizer.display_double_spend_scenario();
+                Ok(None)
+            }
+            Some("lifecycle") => {
+                self.visualizer.display_transaction_lifecycle();
+                Ok(None)
+            }
+            Some("pow") => {
+                let block = self.blockchain.get_latest_block();
+                self.visualizer.display_pow_visualization(
+                    block.index,
+                    block.difficulty,
+                    block.nonce,
+                    &block.hash
+                );
+                Ok(None)
+            }
+            _ => Err(CliError::InvalidArgument(format!(
+                "Unknown topic: {}. Available: difficulty, double-spend, lifecycle, pow",
+                topic.unwrap()
+            ))),
+        }
+    }
+
     /// Display help information
     fn display_help() -> String {
         format!(
@@ -556,6 +796,17 @@ impl Cli {
                           [--block N]                \n\
                 stats                              Show blockchain statistics\n\
                 validate                           Validate chain integrity\n\
+                visualize                           Display blockchain visualization\n\
+             \n  Day 7: Attack Simulation:\n\
+                attack list                        List available attacks\n\
+                attack run <name>                  Run a specific attack\n\
+                attack all                         Run all attack simulations\n\
+                attack report                      Show attack results\n\
+             \n  Day 7: Security Experiments:\n\
+                experiment <type>                  Run security experiment\n\
+                  Types: difficulty, cost, cascade, finality, longest, all\n\
+                learn [topic]                      Educational content\n\
+                  Topics: difficulty, double-spend, lifecycle, pow\n\
              \n  Storage Commands:\n\
                 save <path>                        Save blockchain to file\n\
                 load <path>                        Load blockchain from file\n\
@@ -565,19 +816,21 @@ impl Cli {
              \n  Aliases:\n\
                 a = add     m = mine     c = chain     v = validate\n\
                 p = pending b = balance  h = help      q = exit\n\
+                atk = attack   exp = experiment   viz = visualize\n\
              \nExamples:\n\
                 add Alice Bob 10.5\n\
                 mine\n\
                 chain --full\n\
-                chain --last 3\n\
-                balance Alice\n\
+                attack all\n\
+                experiment cascade\n\
+                learn double-spend\n\
              \n"
         )
     }
 
     /// Run interactive mode
     pub fn run_interactive(&mut self) {
-        println!("\n=== RustChain Day 6: CLI Interface ===");
+        println!("\n=== RustChain Day 7: Attack Simulation & Security ===");
         println!("Type 'help' for available commands\n");
 
         loop {

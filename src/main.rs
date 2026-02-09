@@ -1,9 +1,12 @@
+mod attacks;
 mod block;
 mod blockchain;
 mod cli;
 mod crypto;
+mod experiments;
 mod transaction;
 mod validation;
+mod visualization;
 
 use cli::Cli;
 use std::env;

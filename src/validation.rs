@@ -154,6 +154,10 @@ pub fn validate_chain(blockchain: &Blockchain) -> ValidationResult {
         if let Err(e) = verify_genesis_block(genesis) {
             errors.push(e);
         }
+        // Also verify genesis block hash integrity for educational purposes
+        if let Err(e) = verify_block_hash(genesis) {
+            errors.push(e);
+        }
     }
 
     // Validate each block in the chain
